@@ -5,7 +5,7 @@ Asterisk to OTRS daemon
 
 # USAGE
 
-Change settings in config.xml and it into /etc/otcd/config.xml
+Change settings in config.xml and put it into /etc/otcd/config.xml
 Run daemon:
         
         cd /path/to/otcd/dir/
