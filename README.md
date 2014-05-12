@@ -17,11 +17,13 @@ Run daemon:
         Asterisk::AMI
         EV
         XML::Simple
+        SOAP::Lite
 
 Install it from CPAN:
         
         cpan install Asterisk::AMI
         cpan install EV
         cpan install XML::Simple
+        cpan install SOAP::Lite
 
 Or from you distro repositories
