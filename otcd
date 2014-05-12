@@ -58,7 +58,8 @@ my $astpass     = $config->{'asterisk'}->{'pass'};
 
 # OTRS SOAP connection settings
 my $otrs_host   = $config->{'otrs'}->{'host'};
-use SOAP::Lite('autodispatch', proxy => 'http://support.etegro.local/otrs/rpc.pl'); # I don't know what it's doesn't work with variables. 
+# I don't know what it's doesn't work with variables. 
+use SOAP::Lite('autodispatch', proxy => 'http://example.com/otrs/rpc.pl');
 my $otrs_user   = $config->{'otrs'}->{'user'};
 my $otrs_pass   = $config->{'otrs'}->{'pass'};
 my $RPC         = Core->new() or die "$!\n";
