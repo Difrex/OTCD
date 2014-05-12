@@ -1,0 +1,212 @@
+#!/usr/bin/env perl
+# otcd -- OTRS ticket creation daemon
+# Copyright (C) 2013 ETegro Technologies, PLC
+#               Denis Zheleztsov <denis.zheleztsov@etegro.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of                                                                           
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the                                                                            # GNU General Public License for more details.                                                                                             
+#                                                                                                                                          
+# You should have received a copy of the GNU General Public License                                                                        # along with this program.  If not, see <http://www.gnu.org/licenses/>.
+use strict;
+use warnings;
+use utf8;
+
+use Asterisk::AMI;
+use EV;
+
+use POSIX qw( setsid );
+use POSIX qw(strftime);
+
+use Data::Dumper;
+use XML::Simple;
+
+# ====== START Configuration ====== #
+
+# Load configuration
+my $conf_file   = '/etc/otcd/config.xml';
+my $xs          = XML::Simple->new();
+my $config      = $xs->XMLin($conf_file);
+
+# Debug.
+my $debug = $config->{'debug'}->{'enable'};
+print Dumper($config) if $debug eq "yes"; #Debug
+
+# All operators numbers
+my @numbers     = split(/,/, $config->{'numbers'}, );
+
+# Database connection settings. 
+#my $dbhost = $config->{'database'}->{'host'};
+#my $db = $config->{'database'}->{'db'};
+#my $dbuser = $config->{'database'}->{'user'};
+#my $dbpass = $config->{'database'}->{'pass'};
+#my $dbtable = $config->{'database'}->{'table'};
+# Not needed at this time.
+
+# Asterisk connection settings
+my $asthost     = $config->{'asterisk'}->{'host'};
+my $astport     = $config->{'asterisk'}->{'port'};
+my $astuser     = $config->{'asterisk'}->{'user'};
+my $astpass     = $config->{'asterisk'}->{'pass'};
+
+# OTRS SOAP connection settings
+my $otrs_host   = $config->{'otrs'}->{'host'};
+use SOAP::Lite('autodispatch', proxy => 'http://support.etegro.local/otrs/rpc.pl'); # I don't know what it's doesn't work with variables. 
+my $otrs_user   = $config->{'otrs'}->{'user'};
+my $otrs_pass   = $config->{'otrs'}->{'pass'};
+my $RPC         = Core->new() or die "$!\n";
+
+# Logging
+my $log_enable  = $config->{'log'}->{'enable'};
+my $error_log   = $config->{'log'}->{'error_file'};
+my $ticket_log = $config->{'log'}->{'ticket_file'};
+
+# ====== END Configuration ====== #
+
+# ====== START Functions ======= #
+
+# Logging
+sub logging($$) {
+    my ($log_type, $to_print) = @_;
+
+    if ($log_enable eq "yes") {
+        if ($log_type eq "error") {
+           open(my $error, ">>$error_log") or die "$!\n";
+           print $error $to_print;
+           close($error);
+        }
+        elsif ($log_type eq "ticket") {
+           open(my $ticket, ">>", $ticket_log) or die "$!\n";
+           print $ticket $to_print;
+           close($ticket);
+        }
+    }
+}
+
+# Main function who watchs Event
+sub astman_sub() {
+    my $now_string = strftime "%a %b %e %H:%M:%S %Y", localtime;
+	my $astman = Asterisk::AMI->new(
+                    PeerAddr => "$asthost",
+				    PeerPort => "$astport",
+    				Username => "$astuser",
+	    			Secret => "$astpass",
+		    		Events => 'on',
+			    	Handlers => { default => \&do_event, }
+				);
+
+    my $to_log = "$now_string\n\nUnable to connect to Asterisk: $!\n=====\n";
+	logging("error", "$to_log") and \&astman_sub unless($astman);
+	EV::loop;                                                      
+}
+
+# Creating ticket. Write ticket over SOAP.
+sub create_ticket($$$) {
+    # Get variables
+    my ($out, $in, $name) = @_;
+    my $now_string = strftime "%a %b %e %H:%M:%S %Y", localtime;
+   
+    my $TicketNumber = $RPC->Dispatch( $otrs_user, $otrs_pass, 'TicketObject', 'TicketCreateNumber' );
+    my $ticket = $RPC->Dispatch( $otrs_user, $otrs_pass, 'TicketObject', 'TicketGet', TicketID => 1 );
+    
+    my %ticket_data = (
+            Title       => "Заявка с номера $out",
+            Queue       => 'Support',
+            Lock        => 'unlock',
+            Priority    => '2 low',
+            State       => 'new',
+            CustomerID  => "$in",
+            CustomerUser => "$name",
+            OwnerID     => 1,
+            UserID      => 'admin',
+            );
+    
+    my $TicketID = $RPC->Dispatch( $otrs_user, $otrs_pass, 'TicketObject', 'TicketCreate', %ticket_data => 1 )
+        || die "Cannot create ticket: $!\n";
+    
+    my $ArticleID = $RPC->Dispatch( $otrs_user, $otrs_pass, 'TicketObject', 'ArticleCreate',
+            TicketID    => $TicketID,
+            ArticleType => 'webrequest',
+            SenderType  => 'customer',
+            From        => 'elastix@example.com',
+            To          => 'support@example.com',
+            Subject     => "Заявка с номера $out",
+            Body        => "Заявку с номера $out принял $name",
+            ContentType => 'text/plain',
+            Charset     => 'UTF-8',
+            HistoryType => 'WebRequestCustomer',
+            HistoryComment => "Заявка с номера $out",
+            UserID      => 2,
+            Loop        => 1,
+            );
+    
+    logging("ticket", "$now_string\n\nTicket created!\n
+            ID: $ArticleID
+            Incoming number: $out
+            Operator name: $name
+================================================\n");
+    return $ArticleID;
+}
+
+# Watch Events
+sub do_event() {
+	my ($asterisk, $event) = @_;
+
+    print Dumper($event) if $debug eq "yes" and $event->{'Event'} eq 'Bridge'; # Debug
+
+	if ($event->{'Event'} =~ /Bridge/ and $event->{'Channel1'} =~ /.+from-queue.+/) {
+        print 'Yeah! Event Type: ' . $event->{'Event'} . "\n" if $debug eq "yes"; # Debug
+        print Dumper($event) if $debug eq "yes"; # Debug
+
+		my $callerid1 = $event->{'CallerID1'}; # Outbond phone
+		my $callerid2 = $event->{'CallerID2'}; # Local SIP operator
+		if (defined($callerid1)) {
+			foreach my $op_num (@numbers) {
+				if ($callerid2 == $op_num) {
+                    my $id = $config->{"num$op_num"}->{"id"};
+                    my $op_name = $config->{"num$op_num"}->{"name"};
+					create_ticket("$callerid1", "$id", "$op_name");
+				}
+			}
+		}
+	}   
+}
+
+# Daemonization
+sub daemonize() {
+    my $now_string = strftime "%a %b %e %H:%M:%S %Y", localtime;
+	chdir "/" 
+        or logging("error", "$now_string\n\nUnable chdir to /: $!\n\n====") and die;
+	umask 0;
+	open STDIN, ">/dev/null" 
+        or logging("error", "$now_string\n\nUnable read /dev/null: $!\n====") and die;
+	open STDOUT, ">/dev/null" 
+        or logging("error", "$now_string\n\nUnable write to /dev/null: $!\n====") and die;
+	open STDERR, ">/dev/null" 
+        or logging("error", "$now_string\n\nUnable write to /dev/null: $!\n====") and die;
+	my $pid = fork;
+	exit if $pid;
+	setsid 
+        or logging("error", "$now_string\n\nUnable start a new session: $!\n====") and die;
+};
+
+# ====== END Functions ======= #
+
+# Daemonization
+daemonize() if $debug eq "no";
+
+# Writing our PID to file
+my $now_string = strftime "%a %b %e %H:%M:%S %Y", localtime;
+open(PID, ">/var/run/otcd.pid") 
+        or logging("error", "$now_string\n\nCannot open PID file: $!\n\n====") and die;
+print PID $$ 
+        or logging("error", "$now_string\n\nCannot write PID: $!\n\n====") and die;
+close(PID);
+
+# Run main loop
+astman_sub();

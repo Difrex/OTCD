@@ -1,0 +1,67 @@
+<config>
+    
+    <!-- Database connection settings -->
+	<database>
+		<host></host>
+		<user></user>
+		<pass></pass>
+		<db></db>
+		<table></table>
+	</database>
+
+     <!-- Asterisk connection settings -->
+    <asterisk>
+        <host></host>
+        <port></port>
+        <user></user>
+        <pass></pass>
+    </asterisk>
+   
+    <!-- Operators settings -->
+	<!-- ALL operators numbers. Write it on <numbers>NUM,NUM,NUM,...</numbers> -->
+	<numbers>702,721,792,720,722</numbers>
+    
+    <!-- Each operator to be described in below format:
+      <num[OPERATOR NUMBER]>
+            <name>OPERATOR NAME</name>
+            <id>OPERATOR ID IN DATABASE</id>
+      </num[OPERATOR NUMBER]>
+    -->
+    <num720>
+        <!-- Name in OTRS -->
+        <name></name>
+        <!-- UserID in OTRS -->
+        <id></id>
+    </num720>
+    
+    <num721>
+        <name></name>
+        <id></id>
+    </num721>
+
+    <num702> 
+        <name></name>
+        <id></id>
+    </num702>
+
+    <!-- SOAP setting for OTRS in http://uri/rpc.pl format -->
+    <otrs>
+        <!-- otrs SOAP uri -->
+        <host>http://example.com/otrs/rpc.pl</host>
+        <user></user>
+        <pass></pass>
+    </otrs>
+    
+    <!-- Logging support. Boolean: yes/no -->
+    <log>
+        <enable>yes</enable>
+        <error_file>/var/log/otcd/error.log</error_file>
+        <ticket_file>/var/log/otcd/ticket.log</ticket_file>
+    </log>
+
+    <!-- Debug. Boolean: yes/no -->
+    <debug>
+        <enable>no</enable>
+    </debug>
+
+</config>
