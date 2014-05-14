@@ -5,7 +5,10 @@ Asterisk to OTRS daemon
 
 # USAGE
 
-Change settings in config.xml and put it into /etc/otcd/config.xml
+* Change settings in config.xml and put it into /etc/otcd/config.xml
+* Change domain in otcd. Somethin like this
+
+        sed s/example.com/your.domain.org/g < otcd
 
 Run daemon:
         
